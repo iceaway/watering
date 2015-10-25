@@ -9,6 +9,7 @@
 
 /* PIN 13 = PB5     LED
  * PIN 2  = PD2     Relay
+ * PIN A0 = PC0     Soil moisture sensor
  */
 
 #define PRINTS_BUFSIZE  128
@@ -28,6 +29,7 @@ int cmd_set(int argc, char *argv[]);
 int cmd_echo(int argc, char *argv[]);
 int cmd_env(int argc, char *argv[]);
 int cmd_pin(int argc, char *argv[]);
+int cmd_ain(int argc, char *argv[]);
 
 static int g_echo = 1;
 static struct rbuf g_rxbuf;
@@ -40,6 +42,7 @@ const struct cmd commands[] = {
   { "echo", "Print environment variables", cmd_echo },
   { "env",  "Environment commands", cmd_env },
   { "pin",  "set pin no high/low", cmd_pin },
+  { "ain",  "Read analog input value at pin", cmd_ain },
   { NULL, NULL, NULL }
 };
 
@@ -175,6 +178,45 @@ static int env_set(char const *var, char const *val)
 static int env_clear(void)
 {
   memset(env, 0, sizeof(env));
+  return 0;
+}
+
+int cmd_ain(int argc, char *argv[])
+{
+  int pin;
+  int count = 1;
+
+  if (argc >= 2) {
+    pin = atoi(argv[1]);
+    if (argc >= 3)
+      count = atoi(argv[2]);
+    
+    if ((pin < 0) | (pin > 5)) {
+      prints("\nInvalid pin number: %d\r\n", pin);
+      return 0;
+    }
+
+    while (count--) {
+      switch (pin) {
+      case 0: /* PC0 */
+        /* Start conversion */
+        ADCSRA |= (1 << ADSC);
+        /* Wait until finished */
+        while (ADCSRA & (1 << ADSC)) ;
+        prints("\nADC reads: %u\r\n", ADC);
+
+        break;
+
+      default:
+        prints("\nUnsupported pin: %d\r\n", pin);
+
+      }
+      _delay_ms(100);
+    }
+  } else {
+    prints("\nNot enough arguments\r\n");
+  }
+
   return 0;
 }
 
@@ -403,6 +445,22 @@ static void init_wd(void)
   TCCR1B = (1 << CS11) | (1 << CS10);
 }
 
+
+static void init_adc(void)
+{
+  /* Set ADC reference to AREF (connected on Arduino board?) */
+  ADMUX |= (1 << REFS0);
+
+  /* Set prescaler to 128 as ADC wants ADC clock of 50 kHz to 200 kHz.
+   * 128 gives 16 MHz/128 = 125 kHz
+   */
+  ADCSRA |= (1 << ADPS0) | (1 << ADPS1) | (1 << ADPS2);
+
+  /* Enable ADC */
+  ADCSRA |= (1 << ADEN);
+
+}
+
 static void init_gpio(void)
 {
   /* Set PB5 as output for LED */
@@ -410,30 +468,6 @@ static void init_gpio(void)
 
   /* Set PD2 as output for relay */
   DDRD |= (1 << DDD2);
-
-
-  /* Start with pin low */
-  //PORTB &= ~(1 << PB5);
-
-  /* Disable pull-ups */
-  //PORTD &= ~((1 << PD2) | (1 << PD1) | (1 << PD0));
-#if 0
-  /* Trigger on falling edge for D0 and D1 */
-  EICRA |= (1 << ISC01) | (1 << ISC11);
-
-  /* Any level change for CardLoad */
-  EICRA |= (1 << ISC20);
-  
-  /* Clear any outstanding interrupts */
-  EIFR = (1 << INT0) | (1 << INT1) | (1 << INT2);
-
-  /* Interrupt enable mask */
-  EIMSK |= (1 << INT0) | (1 << INT1) | (1 << INT2);
-
-  /* For blinking the diode */
-  DDRB |= _BV(DDB7);
-#endif
-
 }
 
 static void init_usart(void)
@@ -462,8 +496,8 @@ int main(void)
 
   init_wd();
   init_gpio();
-
   init_usart();
+  init_adc();
 
   /* Enable interrupts globally */
   sei(); 
