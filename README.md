@@ -1,4 +1,3 @@
-# watering
 Automatic plant watering
 ========================
 
