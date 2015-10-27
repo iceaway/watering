@@ -16,3 +16,5 @@ Lots of things remains to do:
 - Create some kind of logging function to record soil moisture over time
   as a help for calibrating the control algorithm
 - Clean up environment periodically to remove old entries
+- Add reset function (WDT enable)
+- Move command handling code to separate file
