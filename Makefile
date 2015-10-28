@@ -3,7 +3,7 @@ OBJS=main.o rbuf.o
 
 CC=avr-gcc
 OBJCOPY=avr-objcopy
-CFLAGS=-Os -DF_CPU=16000000UL -mmcu=atmega328p
+CFLAGS=-Os -DF_CPU=16000000UL -mmcu=atmega328p -Wall -Wextra
 PORT=/dev/ttyACM0
 
 ${BIN}.hex: ${BIN}.elf

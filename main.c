@@ -22,6 +22,9 @@ struct cmd {
   int (*callback_fn)(int argc, char *argv[]);
 };
 
+void color_stack(void) __attribute__ ((naked)) \
+     __attribute__ ((section (".init3")));
+
 static int prints(const char *fmt, ...);
 
 int cmd_help(int argc, char *argv[]);
@@ -30,11 +33,14 @@ int cmd_echo(int argc, char *argv[]);
 int cmd_env(int argc, char *argv[]);
 int cmd_pin(int argc, char *argv[]);
 int cmd_ain(int argc, char *argv[]);
+int cmd_ramdump(int argc, char *argv[]);
 
 static int g_echo = 1;
 static struct rbuf g_rxbuf;
 static struct rbuf g_txbuf;
 static char env[ENV_SIZE] = { 0 };
+extern uint8_t _end;
+extern uint8_t __stack;
 
 const struct cmd commands[] = {
   { "help", "print help", cmd_help },
@@ -43,8 +49,16 @@ const struct cmd commands[] = {
   { "env",  "Environment commands", cmd_env },
   { "pin",  "set pin no high/low", cmd_pin },
   { "ain",  "Read analog input value at pin", cmd_ain },
+  { "ramdump",  "Dump ram", cmd_ramdump },
   { NULL, NULL, NULL }
 };
+
+void color_stack(void)
+{
+  uint8_t *p = &_end;
+  while (p <= &__stack)
+    *p++ = 0xcc;
+}
 
 static void led_on(void)
 {
@@ -215,6 +229,48 @@ int cmd_ain(int argc, char *argv[])
     }
   } else {
     prints("\nNot enough arguments\r\n");
+  }
+
+  return 0;
+}
+
+int cmd_ramdump(int argc, char *argv[])
+{
+  uint16_t start;
+  uint16_t n;
+  uint16_t row;
+  uint8_t *endptr;
+  uint8_t *ptr;
+
+  prints("\nend = %04x, stack = %04x\r\n", &_end, &__stack);
+
+  if (argc >= 3) {
+    start = strtoul(argv[1], NULL, 16);
+    n = strtoul(argv[2], NULL, 16);
+
+    if ((start < 0x200) || (start > 0x21FF)) {
+      prints("\nInvalid start address\r\n");
+      return 0;
+    }
+
+    if ((start + n) > 0x21FF) {
+      prints("\nRange is outside RAM space\r\n");
+      return 0;
+    }
+
+    endptr = (uint8_t *)(start + n);
+    row = 0;
+    ptr = (uint8_t *)start;
+    while (ptr <= endptr) {
+      if ((row % 8) == 0)
+        prints("\r\n%04x    ", ptr);
+      prints("%02x ", *ptr); 
+      ++row;
+      ++ptr;
+    }
+    prints("\r\n");
+  } else {
+    prints("\nNot enough arguments. Usage: %s <start_addr> <size>\r\n", argv[0]);
   }
 
   return 0;
