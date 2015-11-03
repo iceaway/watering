@@ -16,6 +16,14 @@
 #define MAX_ARGC        8 
 #define ENV_SIZE        128
 
+#define ASCII_DEL  0x7F
+#define ASCII_BS   0x08
+
+#define MIN(a,b)  ((a) < (b) ? (a) : (b))
+
+#define IS_INPUT(ddr, bit)  ((ddr) & (1 << (bit)) ? 0 : 1)
+#define IS_OUTPUT(ddr, bit)  ((ddr) & (1 << (bit)) ? 1 : 0)
+
 struct cmd {
   char const * const cmd;
   char const * const help;
@@ -36,6 +44,9 @@ int cmd_ain(int argc, char *argv[]);
 int cmd_ramdump(int argc, char *argv[]);
 
 static int g_echo = 1;
+static int g_log = 0;
+static int g_putty_mode = 1;
+static uint32_t g_ticks = 0;
 static struct rbuf g_rxbuf;
 static struct rbuf g_txbuf;
 static char env[ENV_SIZE] = { 0 };
@@ -60,6 +71,7 @@ void color_stack(void)
     *p++ = 0xcc;
 }
 
+#if 0
 static void led_on(void)
 {
   PORTB |= (1 << PB5);
@@ -69,6 +81,7 @@ static void led_off(void)
 {
   PORTB &= ~(1 << PB5);
 }
+#endif
 
 static void transmit(void)
 {
@@ -84,15 +97,12 @@ static void print_char(char data)
   transmit();
 }
 
-ISR(TIMER1_OVF_vect)
+/* TIMER0 ISR: Tick counter. Executed every 1 ms */
+ISR(TIMER0_COMPA_vect)
 {
-  static int on = 0;
-  if (on) {
-    led_off();
-    on = 0;
-  } else {
-    led_on();
-    on = 1;
+  ++g_ticks;
+  if ((g_ticks % 200) == 0) {
+    PORTB ^= _BV(PORTB5);
   }
 }
 
@@ -202,11 +212,21 @@ int cmd_ain(int argc, char *argv[])
 
   if (argc >= 2) {
     pin = atoi(argv[1]);
-    if (argc >= 3)
-      count = atoi(argv[2]);
+    if (argc >= 3) {
+      if (argc >= 4) {
+        if (strcmp(argv[2], "log") == 0) {
+          if (strcmp(argv[3], "on") == 0)
+            g_log = 1;
+          else
+            g_log = 0;
+        }
+      } else {
+        count = atoi(argv[2]);
+      }
+    }
     
     if ((pin < 0) | (pin > 5)) {
-      prints("\nInvalid pin number: %d\r\n", pin);
+      prints("Invalid pin number: %d\r\n", pin);
       return 0;
     }
 
@@ -217,18 +237,18 @@ int cmd_ain(int argc, char *argv[])
         ADCSRA |= (1 << ADSC);
         /* Wait until finished */
         while (ADCSRA & (1 << ADSC)) ;
-        prints("\nADC reads: %u\r\n", ADC);
+        prints("ADC reads: %u\r\n", ADC);
 
         break;
 
       default:
-        prints("\nUnsupported pin: %d\r\n", pin);
+        prints("Unsupported pin: %d\r\n", pin);
 
       }
       _delay_ms(100);
     }
   } else {
-    prints("\nNot enough arguments\r\n");
+    prints("Not enough arguments\r\n");
   }
 
   return 0;
@@ -242,19 +262,19 @@ int cmd_ramdump(int argc, char *argv[])
   uint8_t *endptr;
   uint8_t *ptr;
 
-  prints("\nend = %04x, stack = %04x\r\n", &_end, &__stack);
+  prints("end = %04x, stack = %04x\r\n", &_end, &__stack);
 
   if (argc >= 3) {
     start = strtoul(argv[1], NULL, 16);
     n = strtoul(argv[2], NULL, 16);
 
     if ((start < 0x200) || (start > 0x21FF)) {
-      prints("\nInvalid start address\r\n");
+      prints("Invalid start address\r\n");
       return 0;
     }
 
     if ((start + n) > 0x21FF) {
-      prints("\nRange is outside RAM space\r\n");
+      prints("Range is outside RAM space\r\n");
       return 0;
     }
 
@@ -270,7 +290,7 @@ int cmd_ramdump(int argc, char *argv[])
     }
     prints("\r\n");
   } else {
-    prints("\nNot enough arguments. Usage: %s <start_addr> <size>\r\n", argv[0]);
+    prints("Not enough arguments. Usage: %s <start_addr> <size>\r\n", argv[0]);
   }
 
   return 0;
@@ -288,7 +308,7 @@ int cmd_pin(int argc, char *argv[])
     pin = atoi(argv[1]);
     
     if ((pin < 0) | (pin > 53)) {
-      prints("\nInvalid pin number: %d\r\n", pin);
+      prints("Invalid pin number: %d\r\n", pin);
       return 0;
     }
 
@@ -299,7 +319,7 @@ int cmd_pin(int argc, char *argv[])
                (strcmp(argv[2], "l") == 0)) {
       mode = LOW;
     } else {
-      prints("\nInvalid mode: '%s'\r\n", argv[2]);
+      prints("Invalid mode: '%s'\r\n", argv[2]);
       return 0;
     }
 
@@ -310,7 +330,7 @@ int cmd_pin(int argc, char *argv[])
       } else if (mode == LOW) {
         PORTB &= ~(1 << PB5);
       } else {
-          prints("\nError! Invalid mode\r\n");
+          prints("Error! Invalid mode\r\n");
       }
       break;
 
@@ -320,15 +340,15 @@ int cmd_pin(int argc, char *argv[])
       } else if (mode == LOW) {
         PORTD &= ~(1 << PD2);
       } else {
-          prints("\nError! Invalid mode\r\n");
+          prints("Error! Invalid mode\r\n");
       }
       break;
     default:
-      prints("\nUnsupported pin: %d\r\n", pin);
+      prints("Unsupported pin: %d\r\n", pin);
 
     }
   } else {
-    prints("\nNot enough arguments\r\n");
+    prints("Not enough arguments\r\n");
   }
 
   return 0;
@@ -475,7 +495,7 @@ static int parse_cmd(char data)
       }
 
       if (!p->cmd)
-        prints("\nUnknown command\r\n");
+        prints("Unknown command\r\n");
 
     }
     ret = 1;
@@ -488,17 +508,23 @@ static int parse_cmd(char data)
 static void echo(char data)
 {
   if (g_echo) {
+    if (data == ASCII_DEL) /* Make backspace work */
+      data = ASCII_BS;
     print_char(data);
   }
 }
 
 static void init_wd(void)
 {
-  /* Enable timer overflow interrupt */
-  TIMSK1 = (1 << TOIE1);
-  
-  /* Prescaler = clk / 1024 */
-  TCCR1B = (1 << CS11) | (1 << CS10);
+  /* CTC Mode, OCR0A = 250 */
+  TCCR0A = (1 << WGM01);
+  OCR0A = 250;
+
+  /* Enable Output Compare interrupt */
+  TIMSK0 = (1 << OCIE0A);
+
+  /* System timer, prescaler = clk / 64 */
+  TCCR0B = (1 << CS00) | (1 << CS01);
 }
 
 
@@ -562,8 +588,20 @@ int main(void)
   while(1) {
     if (rbuf_pop(&g_rxbuf, &tmp)) {
       echo(tmp);
+      if (g_putty_mode && (tmp == '\r'))
+        echo('\n');
       if (parse_cmd(tmp))
-        prints("\n>> ");
+        prints(">> ");
+
+      if (g_log) {
+        if ((g_ticks % 10000) == 0) {
+          /* Start conversion */
+          ADCSRA |= (1 << ADSC);
+          /* Wait until finished */
+          while (ADCSRA & (1 << ADSC)) ;
+          prints("%010d %u\r\n", ADC);
+        }
+      }
     }
   }
 }
