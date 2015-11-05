@@ -9,6 +9,7 @@
 
 /* PIN 13 = PB5     LED
  * PIN 2  = PD2     Relay
+ * PIN 9  = PB1     Manual motor control
  * PIN A0 = PC0     Soil moisture sensor
  */
 
@@ -41,7 +42,9 @@ int cmd_echo(int argc, char *argv[]);
 int cmd_env(int argc, char *argv[]);
 int cmd_pin(int argc, char *argv[]);
 int cmd_ain(int argc, char *argv[]);
+int cmd_din(int argc, char *argv[]);
 int cmd_ramdump(int argc, char *argv[]);
+int cmd_time(int argc, char *argv[]);
 
 static int g_echo = 1;
 static int g_log = 0;
@@ -60,7 +63,9 @@ const struct cmd commands[] = {
   { "env",  "Environment commands", cmd_env },
   { "pin",  "set pin no high/low", cmd_pin },
   { "ain",  "Read analog input value at pin", cmd_ain },
+  { "din",  "Read digital input value at pin", cmd_din },
   { "ramdump",  "Dump ram", cmd_ramdump },
+  { "time",  "Show current time", cmd_time },
   { NULL, NULL, NULL }
 };
 
@@ -205,6 +210,49 @@ static int env_clear(void)
   return 0;
 }
 
+int cmd_time(int argc, char *argv[])
+{
+   prints("Current time: %lu\r\n", g_ticks);
+   return 0;
+}
+
+uint32_t adc_read(void)
+{
+   /* Start conversion */
+   ADCSRA |= (1 << ADSC);
+   /* Wait until finished */
+   while (ADCSRA & (1 << ADSC)) ;
+   return ADC;
+}
+
+int cmd_din(int argc, char *argv[])
+{
+  int pin;
+
+  if (argc >= 2) {
+     pin = atoi(argv[1]);
+
+     if ((pin < 0) | (pin > 13)) {
+        prints("Invalid pin number: %d\r\n", pin);
+        return 0;
+     }
+
+     switch (pin) {
+        case 9: /* PB1 */
+           prints("Pin 9: %s\r\n", PINB & (1 << PB1) ? "HIGH" : "LOW");
+           break;
+
+        default:
+           prints("Unsupported pin: %d\r\n", pin);
+
+     }
+  } else {
+    prints("Not enough arguments\r\n");
+  }
+
+  return 0;
+}
+
 int cmd_ain(int argc, char *argv[])
 {
   int pin;
@@ -233,12 +281,7 @@ int cmd_ain(int argc, char *argv[])
     while (count--) {
       switch (pin) {
       case 0: /* PC0 */
-        /* Start conversion */
-        ADCSRA |= (1 << ADSC);
-        /* Wait until finished */
-        while (ADCSRA & (1 << ADSC)) ;
-        prints("ADC reads: %u\r\n", ADC);
-
+        prints("ADC reads: %u\r\n", adc_read());
         break;
 
       default:
@@ -495,7 +538,7 @@ static int parse_cmd(char data)
       }
 
       if (!p->cmd)
-        prints("Unknown command\r\n");
+        prints("Unknown command '%s'\r\n", buf);
 
     }
     ret = 1;
@@ -550,6 +593,9 @@ static void init_gpio(void)
 
   /* Set PD2 as output for relay */
   DDRD |= (1 << DDD2);
+
+  /* Activate pull-up for motor control input pin */
+  PORTB |= (1 << PB1);
 }
 
 static void init_usart(void)
@@ -572,6 +618,8 @@ static void init_usart(void)
 int main(void)
 {
   char tmp;
+  uint32_t last = 0;
+  uint32_t adcval;
 
   rbuf_init(&g_rxbuf);
   rbuf_init(&g_txbuf);
@@ -585,23 +633,23 @@ int main(void)
   sei(); 
   prints("\r\nWelcome to PellShell\r\n");
   prints(">> ");
+  last = g_ticks;
   while(1) {
-    if (rbuf_pop(&g_rxbuf, &tmp)) {
-      echo(tmp);
-      if (g_putty_mode && (tmp == '\r'))
-        echo('\n');
-      if (parse_cmd(tmp))
-        prints(">> ");
-
-      if (g_log) {
-        if ((g_ticks % 10000) == 0) {
-          /* Start conversion */
-          ADCSRA |= (1 << ADSC);
-          /* Wait until finished */
-          while (ADCSRA & (1 << ADSC)) ;
-          prints("%010d %u\r\n", ADC);
+     if (rbuf_pop(&g_rxbuf, &tmp)) {
+        echo(tmp);
+        if (g_putty_mode && (tmp == '\r'))
+           echo('\n');
+        if (parse_cmd(tmp)) {
+           prints(">> ");
         }
-      }
-    }
+     }
+     if (g_log) {
+        if ((g_ticks - last) > 10000) {
+           adcval = adc_read();
+           prints("%010lu,", g_ticks);
+           prints("%lu\r\n", adcval);
+           last = g_ticks;
+        }
+     }
   }
 }
