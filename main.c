@@ -9,7 +9,7 @@
 
 /* PIN 13 = PB5     LED
  * PIN 2  = PD2     Relay
- * PIN 9  = PB1     Manual motor control
+ * PIN 9  = PB1     Manual motor control (PCINT1)
  * PIN A0 = PC0     Soil moisture sensor
  */
 
@@ -32,7 +32,7 @@ struct cmd {
 };
 
 void color_stack(void) __attribute__ ((naked)) \
-     __attribute__ ((section (".init3")));
+       __attribute__ ((section (".init3")));
 
 static int prints(const char *fmt, ...);
 
@@ -46,9 +46,10 @@ int cmd_din(int argc, char *argv[]);
 int cmd_ramdump(int argc, char *argv[]);
 int cmd_time(int argc, char *argv[]);
 
-static int g_echo = 1;
-static int g_log = 0;
-static int g_putty_mode = 1;
+static uint8_t g_echo = 1;
+static uint8_t g_log = 0;
+static uint8_t g_putty_mode = 1;
+static uint8_t g_pump_change = 0;
 static uint32_t g_ticks = 0;
 static struct rbuf g_rxbuf;
 static struct rbuf g_txbuf;
@@ -100,6 +101,11 @@ static void print_char(char data)
 {
   rbuf_push(&g_txbuf, data);
   transmit();
+}
+
+ISR(PCINT0_vect)
+{
+  g_pump_change = 1;
 }
 
 /* TIMER0 ISR: Tick counter. Executed every 1 ms */
@@ -212,17 +218,17 @@ static int env_clear(void)
 
 int cmd_time(int argc, char *argv[])
 {
-   prints("Current time: %lu\r\n", g_ticks);
-   return 0;
+  prints("Current time: %lu.%03lu\r\n", g_ticks/1000, g_ticks % 1000);
+  return 0;
 }
 
 uint32_t adc_read(void)
 {
-   /* Start conversion */
-   ADCSRA |= (1 << ADSC);
-   /* Wait until finished */
-   while (ADCSRA & (1 << ADSC)) ;
-   return ADC;
+  /* Start conversion */
+  ADCSRA |= (1 << ADSC);
+  /* Wait until finished */
+  while (ADCSRA & (1 << ADSC)) ;
+  return ADC;
 }
 
 int cmd_din(int argc, char *argv[])
@@ -230,22 +236,22 @@ int cmd_din(int argc, char *argv[])
   int pin;
 
   if (argc >= 2) {
-     pin = atoi(argv[1]);
+    pin = atoi(argv[1]);
 
-     if ((pin < 0) | (pin > 13)) {
-        prints("Invalid pin number: %d\r\n", pin);
-        return 0;
-     }
+    if ((pin < 0) | (pin > 13)) {
+      prints("Invalid pin number: %d\r\n", pin);
+      return 0;
+    }
 
-     switch (pin) {
-        case 9: /* PB1 */
-           prints("Pin 9: %s\r\n", PINB & (1 << PB1) ? "HIGH" : "LOW");
-           break;
+    switch (pin) {
+      case 9: /* PB1 */
+        prints("Pin 9: %s\r\n", PINB & (1 << PB1) ? "HIGH" : "LOW");
+        break;
 
-        default:
-           prints("Unsupported pin: %d\r\n", pin);
+      default:
+        prints("Unsupported pin: %d\r\n", pin);
 
-     }
+    }
   } else {
     prints("Not enough arguments\r\n");
   }
@@ -272,7 +278,7 @@ int cmd_ain(int argc, char *argv[])
         count = atoi(argv[2]);
       }
     }
-    
+
     if ((pin < 0) | (pin > 5)) {
       prints("Invalid pin number: %d\r\n", pin);
       return 0;
@@ -280,12 +286,12 @@ int cmd_ain(int argc, char *argv[])
 
     while (count--) {
       switch (pin) {
-      case 0: /* PC0 */
-        prints("ADC reads: %u\r\n", adc_read());
-        break;
+        case 0: /* PC0 */
+          prints("ADC reads: %u\r\n", adc_read());
+          break;
 
-      default:
-        prints("Unsupported pin: %d\r\n", pin);
+        default:
+          prints("Unsupported pin: %d\r\n", pin);
 
       }
       _delay_ms(100);
@@ -349,7 +355,7 @@ int cmd_pin(int argc, char *argv[])
 
   if (argc >= 3) {
     pin = atoi(argv[1]);
-    
+
     if ((pin < 0) | (pin > 53)) {
       prints("Invalid pin number: %d\r\n", pin);
       return 0;
@@ -359,7 +365,7 @@ int cmd_pin(int argc, char *argv[])
         (strcmp(argv[2], "h") == 0)) {
       mode = HIGH;
     } else if ((strcmp(argv[2], "low") == 0) || 
-               (strcmp(argv[2], "l") == 0)) {
+        (strcmp(argv[2], "l") == 0)) {
       mode = LOW;
     } else {
       prints("Invalid mode: '%s'\r\n", argv[2]);
@@ -367,27 +373,27 @@ int cmd_pin(int argc, char *argv[])
     }
 
     switch (pin) {
-    case 13: /* PB5 */
-      if (mode == HIGH) {
-        PORTB |= (1 << PB5);
-      } else if (mode == LOW) {
-        PORTB &= ~(1 << PB5);
-      } else {
+      case 13: /* PB5 */
+        if (mode == HIGH) {
+          PORTB |= (1 << PB5);
+        } else if (mode == LOW) {
+          PORTB &= ~(1 << PB5);
+        } else {
           prints("Error! Invalid mode\r\n");
-      }
-      break;
+        }
+        break;
 
-    case 2: /* PD2 */
-      if (mode == HIGH) {
-        PORTD |= (1 << PD2);
-      } else if (mode == LOW) {
-        PORTD &= ~(1 << PD2);
-      } else {
+      case 2: /* PD2 */
+        if (mode == HIGH) {
+          PORTD |= (1 << PD2);
+        } else if (mode == LOW) {
+          PORTD &= ~(1 << PD2);
+        } else {
           prints("Error! Invalid mode\r\n");
-      }
-      break;
-    default:
-      prints("Unsupported pin: %d\r\n", pin);
+        }
+        break;
+      default:
+        prints("Unsupported pin: %d\r\n", pin);
 
     }
   } else {
@@ -523,11 +529,11 @@ static int parse_cmd(char data)
     len = idx;
     idx = 0;
   }
-  
+
   if (process) {
     if (len != 0) {
       argc = parse_args(buf, argv);
-      
+
       p = &commands[0];
       while (p->cmd) {
         if (strncmp(p->cmd, buf, sizeof(buf)) == 0) {
@@ -596,6 +602,12 @@ static void init_gpio(void)
 
   /* Activate pull-up for motor control input pin */
   PORTB |= (1 << PB1);
+
+  /* Enable interrupts for PCINT [7:0] */
+  PCICR |= (1 << PCIE0);
+
+  /* Mask interrupts for PCINT0 */
+  PCMSK0 |= (1 << PCINT1);
 }
 
 static void init_usart(void)
@@ -635,21 +647,31 @@ int main(void)
   prints(">> ");
   last = g_ticks;
   while(1) {
-     if (rbuf_pop(&g_rxbuf, &tmp)) {
-        echo(tmp);
-        if (g_putty_mode && (tmp == '\r'))
-           echo('\n');
-        if (parse_cmd(tmp)) {
-           prints(">> ");
-        }
-     }
-     if (g_log) {
-        if ((g_ticks - last) > 10000) {
-           adcval = adc_read();
-           prints("%010lu,", g_ticks);
-           prints("%lu\r\n", adcval);
-           last = g_ticks;
-        }
-     }
+    if (rbuf_pop(&g_rxbuf, &tmp)) {
+      echo(tmp);
+      if (g_putty_mode && (tmp == '\r'))
+        echo('\n');
+      if (parse_cmd(tmp)) {
+        prints(">> ");
+      }
+    }
+    if (g_log) {
+      if ((g_ticks - last) > 10000) {
+        adcval = adc_read();
+        prints("%010lu,", g_ticks);
+        prints("%lu\r\n", adcval);
+        last = g_ticks;
+      }
+    }
+
+    if (g_pump_change) {
+      if (PINB & (1 << PB1)) {
+        PORTD |= (1 << PD2);
+      } else {
+        PORTD &= ~(1 << PD2);
+      }
+      g_pump_change = 0;
+
+    }
   }
 }
