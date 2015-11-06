@@ -193,7 +193,7 @@ static int env_get(char const *var, char *value, size_t size)
       return strlen(value);
     }
   } else {
-    return 0;
+    return -1;
   }
 }
 
@@ -453,8 +453,8 @@ int cmd_echo(int argc, char *argv[])
   } else {
     if (argv[1][0] == '$') {
       var = argv[1]+1;
-      if ((len = env_get(var, value, sizeof(value))))
-        prints("\r\n%s (%d)\r\n", value, len);
+      if ((len = env_get(var, value, sizeof(value))) >= 0)
+        prints("%s\r\n", value, len);
       else
         prints("Variable does not exist\r\n");
 

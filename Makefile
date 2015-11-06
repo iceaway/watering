@@ -15,5 +15,8 @@ ${BIN}.elf: ${OBJS}
 install: ${BIN}.hex
 	avrdude -v -p atmega328p  -c arduino -P ${PORT} -b 115200 -U flash:w:$<
 
+upload: ${BIN}.hex
+	scp main.hex pi@raspberrypi:/home/pi
+
 clean:
 	rm -f ${BIN}.elf ${BIN}.hex ${OBJS}
