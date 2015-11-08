@@ -11,6 +11,7 @@ But mostly its for fun and self educational purposes.
 
 Lots of things remains to do:
 - Control algorithm for activating relay
+- Filter the ADC signal as it is quite noisy
 - Add control parameters as environment variables
 - Save environment to EEPROM
 - Create some kind of logging function to record soil moisture over time

@@ -1,0 +1,5 @@
+- Add scheduler for running tasks one-shot, periodic etc
+- Add pinmap struct
+- ps command for seeing tasks
+- change systimer to 10 or 100 ms
+

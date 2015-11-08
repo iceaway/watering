@@ -20,7 +20,8 @@
 #define ASCII_DEL  0x7F
 #define ASCII_BS   0x08
 
-#define MIN(a,b)  ((a) < (b) ? (a) : (b))
+#define MIN(a,b)          ((a) < (b) ? (a) : (b))
+#define LIMIT(x,min,max)  (x) > (max) ? (max) : (x) < (min) ? (min) : (x)
 
 #define IS_INPUT(ddr, bit)  ((ddr) & (1 << (bit)) ? 0 : 1)
 #define IS_OUTPUT(ddr, bit)  ((ddr) & (1 << (bit)) ? 1 : 0)
@@ -31,10 +32,20 @@ struct cmd {
   int (*callback_fn)(int argc, char *argv[]);
 };
 
+struct dpin {
+  int pin;
+  char *name;
+  uint8_t bitno;
+  volatile uint8_t *port;
+  volatile uint8_t *ddr;
+  volatile uint8_t *input;
+};
+
 void color_stack(void) __attribute__ ((naked)) \
        __attribute__ ((section (".init3")));
 
 static int prints(const char *fmt, ...);
+static int env_get(char const *var, char *value, size_t size);
 
 int cmd_help(int argc, char *argv[]);
 int cmd_set(int argc, char *argv[]);
@@ -51,11 +62,18 @@ static uint8_t g_log = 0;
 static uint8_t g_putty_mode = 1;
 static uint8_t g_pump_change = 0;
 static uint32_t g_ticks = 0;
+static uint32_t g_secs = 0;
 static struct rbuf g_rxbuf;
 static struct rbuf g_txbuf;
 static char env[ENV_SIZE] = { 0 };
 extern uint8_t _end;
 extern uint8_t __stack;
+
+const struct dpin pinmap[] = {
+  { 2,  "Relay", PD2, &PORTD, &DDRD, &PIND },
+  { 9,  "Motor ctrl", PB1, &PORTB, &DDRB, &PINB },
+  { 13, "LED", PB5, &PORTB, &DDRB, &PINB }
+};
 
 const struct cmd commands[] = {
   { "help", "print help", cmd_help },
@@ -103,6 +121,16 @@ static void print_char(char data)
   transmit();
 }
 
+static uint32_t get_time(void)
+{
+  return g_secs;
+}
+
+static uint32_t get_ticks(void)
+{
+  return g_ticks;
+}
+
 ISR(PCINT0_vect)
 {
   g_pump_change = 1;
@@ -115,6 +143,9 @@ ISR(TIMER0_COMPA_vect)
   if ((g_ticks % 200) == 0) {
     PORTB ^= _BV(PORTB5);
   }
+
+  if ((g_ticks % 1000) == 0)
+    ++g_secs;
 }
 
 ISR(USART_UDRE_vect)
@@ -160,7 +191,15 @@ static int prints(const char *fmt, ...)
   return size;
 }
 
-#define MIN(a,b)  ((a) < (b) ? (a) : (b))
+static void env_get_def(char const *var, char *value, size_t size, char *def)
+{
+  int rc = env_get(var, value, size);
+
+  if (rc < 0) {
+    memset(value, 0, size);
+    strncpy(value, def, size-1);
+  }
+}
 
 static int env_get(char const *var, char *value, size_t size)
 {
@@ -627,6 +666,72 @@ static void init_usart(void)
 
 }
 
+void control(void)
+{
+  enum cstate {
+    OFF,
+    ON,
+    BACK_OFF
+  };
+  static enum cstate state = OFF;
+  static uint32_t end_time = 0;
+  char buf[16];
+  uint16_t level;
+  uint32_t ontime;
+  uint32_t botime;
+  uint16_t curlevel;
+
+  env_get_def("LEVEL", buf, sizeof(buf), "130");
+  level = atoi(buf);
+  level = LIMIT(level, 1, 1000);
+
+  env_get_def("ONTIME", buf, sizeof(buf), "5");
+  ontime = atoi(buf);
+  ontime = LIMIT(ontime, 1, 10);
+
+  env_get_def("BOTIME", buf, sizeof(buf), "600");
+  botime = atoi(buf);
+  ontime = LIMIT(ontime, 1, 9999);
+
+  curlevel = adc_read();
+
+  switch (state) {
+  case OFF:
+   if (curlevel > level) {
+     state = ON;
+     //PORTD |= (1 << PD2);
+     end_time = get_time() + ontime;
+     prints("Switching to state ON. curtime = %lu, end time = %lu\r\n",
+            get_time(), end_time);
+   }
+   break;
+
+  case ON:
+    if (get_time() >= end_time) {
+      state = BACK_OFF;
+      //PORTD &= ~(1 << PD2);
+      end_time = get_time() + botime;
+      prints("Switching to state BACK_OFF. curtime = %lu, end time = %lu\r\n",
+             get_time(), end_time);
+    }
+    break;
+
+  case BACK_OFF:
+    if (get_time() >= end_time) {
+      state = OFF;
+      prints("Switching to state OFF. curtime = %lu, end time = %lu\r\n",
+             get_time(), end_time);
+    }
+    break;
+  
+  default:
+    prints("Invalid state\r\n");
+
+  };
+
+  /* TODO: Finish this... Add function for setting pin high/low */
+}
+
 int main(void)
 {
   char tmp;
@@ -673,5 +778,7 @@ int main(void)
       g_pump_change = 0;
 
     }
+
+    control();
   }
 }
