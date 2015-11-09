@@ -6,6 +6,8 @@
 #include <stdlib.h>
 
 #include "rbuf.h"
+#include "gpio.h"
+#include "util.h"
 
 /* PIN 13 = PB5     LED
  * PIN 2  = PD2     Relay
@@ -20,9 +22,6 @@
 #define ASCII_DEL  0x7F
 #define ASCII_BS   0x08
 
-#define MIN(a,b)          ((a) < (b) ? (a) : (b))
-#define LIMIT(x,min,max)  (x) > (max) ? (max) : (x) < (min) ? (min) : (x)
-
 #define IS_INPUT(ddr, bit)  ((ddr) & (1 << (bit)) ? 0 : 1)
 #define IS_OUTPUT(ddr, bit)  ((ddr) & (1 << (bit)) ? 1 : 0)
 
@@ -30,15 +29,6 @@ struct cmd {
   char const * const cmd;
   char const * const help;
   int (*callback_fn)(int argc, char *argv[]);
-};
-
-struct dpin {
-  int pin;
-  char *name;
-  uint8_t bitno;
-  volatile uint8_t *port;
-  volatile uint8_t *ddr;
-  volatile uint8_t *input;
 };
 
 void color_stack(void) __attribute__ ((naked)) \
@@ -68,12 +58,6 @@ static struct rbuf g_txbuf;
 static char env[ENV_SIZE] = { 0 };
 extern uint8_t _end;
 extern uint8_t __stack;
-
-const struct dpin pinmap[] = {
-  { 2,  "Relay", PD2, &PORTD, &DDRD, &PIND },
-  { 9,  "Motor ctrl", PB1, &PORTB, &DDRB, &PINB },
-  { 13, "LED", PB5, &PORTB, &DDRB, &PINB }
-};
 
 const struct cmd commands[] = {
   { "help", "print help", cmd_help },
