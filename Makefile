@@ -1,5 +1,5 @@
 BIN=main
-OBJS=main.o rbuf.o
+OBJS=main.o rbuf.o gpio.o
 
 CC=avr-gcc
 OBJCOPY=avr-objcopy

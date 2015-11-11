@@ -46,6 +46,7 @@ int cmd_ain(int argc, char *argv[]);
 int cmd_din(int argc, char *argv[]);
 int cmd_ramdump(int argc, char *argv[]);
 int cmd_time(int argc, char *argv[]);
+int cmd_ctrl(int argc, char *argv[]);
 
 static uint8_t g_echo = 1;
 static uint8_t g_log = 0;
@@ -69,6 +70,7 @@ const struct cmd commands[] = {
   { "din",  "Read digital input value at pin", cmd_din },
   { "ramdump",  "Dump ram", cmd_ramdump },
   { "time",  "Show current time", cmd_time },
+  { "ctrl",  "Display control variables and state", cmd_ctrl },
   { NULL, NULL, NULL }
 };
 
@@ -237,6 +239,36 @@ static int env_clear(void)
 {
   memset(env, 0, sizeof(env));
   return 0;
+}
+
+int cmd_ctrl(int argc, char *argv[])
+{
+  char buf[16];
+  uint16_t level;
+  uint32_t ontime;
+  uint32_t botime;
+
+  env_get_def("LEVEL", buf, sizeof(buf), "130");
+  level = atoi(buf);
+  level = LIMIT(level, 1, 1000);
+
+  env_get_def("ONTIME", buf, sizeof(buf), "5");
+  ontime = atoi(buf);
+  ontime = LIMIT(ontime, 1, 10);
+
+  env_get_def("BOTIME", buf, sizeof(buf), "600");
+  botime = atoi(buf);
+  botime = LIMIT(botime, 1, 9999);
+
+  prints("Level:  %u\r\n"
+         "Ontime: %lu\r\n"
+         "Botime: %lu\r\n",
+         level,
+         ontime,
+         botime);
+
+  return 0;
+
 }
 
 int cmd_time(int argc, char *argv[])
@@ -629,7 +661,7 @@ static void init_gpio(void)
   /* Enable interrupts for PCINT [7:0] */
   PCICR |= (1 << PCIE0);
 
-  /* Mask interrupts for PCINT0 */
+  /* Mask interrupts for PCINT1 */
   PCMSK0 |= (1 << PCINT1);
 }
 
@@ -665,6 +697,7 @@ void control(void)
   uint32_t botime;
   uint16_t curlevel;
 
+
   env_get_def("LEVEL", buf, sizeof(buf), "130");
   level = atoi(buf);
   level = LIMIT(level, 1, 1000);
@@ -675,7 +708,7 @@ void control(void)
 
   env_get_def("BOTIME", buf, sizeof(buf), "600");
   botime = atoi(buf);
-  ontime = LIMIT(ontime, 1, 9999);
+  botime = LIMIT(botime, 1, 9999);
 
   curlevel = adc_read();
 

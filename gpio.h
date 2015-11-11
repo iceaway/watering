@@ -1,13 +1,25 @@
 #ifndef __GPIO_H_
 #define __GPIO_H_
 
-struct dpin {
-  int pin;
-  char *name;
-  uint8_t bitno;
-  volatile uint8_t *port;
-  volatile uint8_t *ddr;
-  volatile uint8_t *input;
+enum gpio_ddr {
+  GPIO_INPUT,
+  GPIO_OUTPUT
 };
+
+enum gpio_mode {
+  GPIO_HIGH,
+  GPIO_LOW
+};
+
+enum gpio_pullup {
+  GPIO_PULLUP,
+  GPIO_NOPULLUP
+};
+
+
+int gpio_ddr(int pin, enum gpio_ddr ddr);
+int gpio_mode(int pin, enum gpio_mode mode);
+int gpio_pullup(int pin, enum gpio_pullup pup);
+int gpio_read(int pin, enum gpio_pullup *value);
 
 #endif
