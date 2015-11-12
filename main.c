@@ -277,7 +277,7 @@ int cmd_time(int argc, char *argv[])
   return 0;
 }
 
-uint32_t adc_read(void)
+uint16_t adc_read(void)
 {
   /* Start conversion */
   ADCSRA |= (1 << ADSC);
@@ -689,6 +689,7 @@ void control(void)
     ON,
     BACK_OFF
   };
+
   static enum cstate state = OFF;
   static uint32_t end_time = 0;
   char buf[16];
@@ -710,18 +711,18 @@ void control(void)
   botime = atoi(buf);
   botime = LIMIT(botime, 1, 9999);
 
-  curlevel = adc_read();
 
   switch (state) {
   case OFF:
-   if (curlevel > level) {
-     state = ON;
-     //PORTD |= (1 << PD2);
-     end_time = get_time() + ontime;
-     prints("Switching to state ON. curtime = %lu, end time = %lu\r\n",
-            get_time(), end_time);
-   }
-   break;
+    curlevel = adc_read();
+    if (curlevel > level) {
+      state = ON;
+      //PORTD |= (1 << PD2);
+      end_time = get_time() + ontime;
+      prints("Switching to state ON. curtime = %lu, end time = %lu\r\n",
+             get_time(), end_time);
+    }
+    break;
 
   case ON:
     if (get_time() >= end_time) {
@@ -753,7 +754,7 @@ int main(void)
 {
   char tmp;
   uint32_t last = 0;
-  uint32_t adcval;
+  uint16_t adcval;
 
   rbuf_init(&g_rxbuf);
   rbuf_init(&g_txbuf);
@@ -777,11 +778,12 @@ int main(void)
         prints(">> ");
       }
     }
+
     if (g_log) {
       if ((g_ticks - last) > 10000) {
         adcval = adc_read();
         prints("%010lu,", g_ticks);
-        prints("%lu\r\n", adcval);
+        prints("%u\r\n", adcval);
         last = g_ticks;
       }
     }
