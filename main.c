@@ -8,6 +8,7 @@
 #include "rbuf.h"
 #include "gpio.h"
 #include "util.h"
+#include "sched.h"
 
 /* PIN 13 = PB5     LED
  * PIN 2  = PD2     Relay
@@ -107,12 +108,12 @@ static void print_char(char data)
   transmit();
 }
 
-static uint32_t get_time(void)
+uint32_t get_time(void)
 {
   return g_secs;
 }
 
-static uint32_t get_ticks(void)
+uint32_t get_ticks(void)
 {
   return g_ticks;
 }
@@ -132,6 +133,8 @@ ISR(TIMER0_COMPA_vect)
 
   if ((g_ticks % 1000) == 0)
     ++g_secs;
+
+  sched_update(g_ticks);
 }
 
 ISR(USART_UDRE_vect)
@@ -750,6 +753,11 @@ void control(void)
   /* TODO: Finish this... Add function for setting pin high/low */
 }
 
+void testfn(void)
+{
+  prints("%lu: Test function\r\n", get_ticks());
+}
+
 int main(void)
 {
   char tmp;
@@ -763,6 +771,10 @@ int main(void)
   init_gpio();
   init_usart();
   init_adc();
+
+  sched_init();
+
+  sched_add(testfn, PERIODIC, 1000, 0);
 
   /* Enable interrupts globally */
   sei(); 
@@ -779,6 +791,7 @@ int main(void)
       }
     }
 
+    
     if (g_log) {
       if ((g_ticks - last) > 10000) {
         adcval = adc_read();
@@ -787,7 +800,8 @@ int main(void)
         last = g_ticks;
       }
     }
-
+    
+    
     if (g_pump_change) {
       if (PINB & (1 << PB1)) {
         PORTD |= (1 << PD2);
@@ -798,6 +812,11 @@ int main(void)
 
     }
 
+    sched_loop(get_ticks());
+
+    /* 
     control();
+    */
+
   }
 }
